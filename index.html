@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Dashboard do Robô 3D</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: sans-serif;
+      background: #f0f2f5;
+      height: 120vh;
+      display: grid;
+      grid-template-areas:
+        "robot control"
+        "log   log";
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 2fr 1fr;
+      gap: 1rem;
+      padding: 1rem;
+    }
+    .card {
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+      overflow: hidden;
+    }
+    .robot-card { grid-area: robot; }
+    #container { width: 100%; height: 100%; cursor: grab; }
+    .control-card {
+      grid-area: control;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    .control-card h2 { margin-bottom: .5rem; }
+    .valores {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: .5rem;
+    }
+    .valor {
+      background: #fafafa;
+      padding: .8rem;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      text-align: center;
+    }
+    .valor strong { display: block; margin-bottom: .3rem; }
+    .valor span { font-size: 1.5rem; }
+    .slider-group {
+      display: grid;
+      gap: .75rem;
+      margin-top: .5rem;
+    }
+    .slider { display: flex; flex-direction: column; }
+    .slider input { width: 100%; }
+    .buttons {
+      display: flex;
+      gap: .5rem;
+      margin-top: .5rem;
+    }
+    .buttons button {
+      flex: 1;
+      padding: .5rem;
+      border: none;
+      background: #007bff;
+      color: #fff;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .buttons button:disabled {
+      background: #ccc;
+      cursor: default;
+    }
+    #records {
+      background: #fafafa;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: .5rem;
+      height: 100px;
+      overflow-y: auto;
+      font-family: monospace;
+      margin-top: .5rem;
+    }
+    .log-card {
+      grid-area: log;
+      padding: 1rem;
+    }
+    .log-card h2 { margin-bottom: .5rem; }
+    #log {
+      height: calc(100% - 1.5rem);
+      background: #222;
+      color: #0f0;
+      padding: .8rem;
+      font-family: monospace;
+      white-space: pre-wrap;
+      overflow-y: auto;
+      border-radius: 4px;
+    }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.min.js"></script>
+</head>
+<body>
+
+  <!-- 3D Robô -->
+  <div class="card robot-card">
+    <div id="container"></div>
+  </div>
+
+  <!-- Painel de Controle -->
+  <div class="card control-card">
+    <h2>Controle do Braço 3D</h2>
+    <div class="valores">
+      <div class="valor"><strong>Base</strong><span id="base">–</span></div>
+      <div class="valor"><strong>Shoulder</strong><span id="shoulder">–</span></div>
+      <div class="valor"><strong>Elbow</strong><span id="elbow">–</span></div>
+      <div class="valor"><strong>Wrist</strong><span id="wrist">–</span></div>
+      <div class="valor"><strong>Gripper</strong><span id="gripper">–</span></div>
+    </div>
+    <div class="slider-group">
+      <div class="slider">
+        <label for="sliderBase"><strong>Base</strong> <span id="valBase">0°</span></label>
+        <input type="range" id="sliderBase" min="0" max="360" value="0" step="1">
+      </div>
+      <div class="slider">
+        <label for="sliderShoulder"><strong>Shoulder</strong> <span id="valShoulder">0°</span></label>
+        <input type="range" id="sliderShoulder" min="0" max="180" value="0" step="1">
+      </div>
+      <div class="slider">
+        <label for="sliderElbow"><strong>Elbow</strong> <span id="valElbow">0°</span></label>
+        <input type="range" id="sliderElbow" min="0" max="180" value="0" step="1">
+      </div>
+      <div class="slider">
+        <label for="sliderWrist"><strong>Wrist</strong> <span id="valWrist">0°</span></label>
+        <input type="range" id="sliderWrist" min="0" max="180" value="0" step="1">
+      </div>
+      <div class="slider">
+        <label for="sliderGripper"><strong>Gripper</strong> <span id="valGripper">0°</span></label>
+        <input type="range" id="sliderGripper" min="0" max="180" value="0" step="1">
+      </div>
+    </div>
+<div class="buttons">
+  <button id="recordBtn">Gravar Movimentos</button>
+  <button id="sendBtn" disabled>Enviar Movimentos</button>
+</div>
+    <div id="records"></div>
+  </div>
+
+  <!-- Log de Mensagens -->
+  <div class="card log-card">
+    <h2>Log de Mensagens</h2>
+    <div id="log">— aguardando dados —</div>
+  </div>
+
+  <script>
+    // === Setup básico ===
+    const container = document.getElementById('container');
+    const scene     = new THREE.Scene();
+    const camera    = new THREE.PerspectiveCamera(
+      45,
+      container.clientWidth / container.clientHeight,
+      0.1, 1000
+    );
+    const target    = new THREE.Vector3(0, 1, 0);
+    camera.position.set(4, 4, 6);
+    camera.lookAt(target);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(container.clientWidth, container.clientHeight);
+    renderer.setPixelRatio(window.devicePixelRatio);
+    container.appendChild(renderer.domElement);
+
+    window.addEventListener('resize', () => {
+      camera.aspect = container.clientWidth / container.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(container.clientWidth, container.clientHeight);
+    });
+
+    // === Iluminação ===
+    scene.add(new THREE.AmbientLight(0x555555));
+    const p1 = new THREE.PointLight(0xffffff, 1.2);
+    p1.position.set(5,10,5); scene.add(p1);
+    const p2 = new THREE.PointLight(0xffffff, 1.6);
+    p2.position.set(-5,5,-5); scene.add(p2);
+
+    // === Helpers de referência ===
+    scene.add(new THREE.GridHelper(10, 10, 0x888888, 0x444444));
+    scene.add(new THREE.AxesHelper(5));
+
+    // === Controles de câmera “manual” ===
+    const spherical = new THREE.Spherical();
+    let isDragging = false;
+    const prevPos = { x: 0, y: 0 };
+    container.addEventListener('mousedown', e => {
+      isDragging = true;
+      prevPos.x = e.clientX; prevPos.y = e.clientY;
+      container.style.cursor = 'grabbing';
+    });
+    window.addEventListener('mousemove', e => {
+      if (!isDragging) return;
+      const dx = e.clientX - prevPos.x, dy = e.clientY - prevPos.y;
+      prevPos.x = e.clientX; prevPos.y = e.clientY;
+      const offset = camera.position.clone().sub(target);
+      spherical.setFromVector3(offset);
+      spherical.theta -= dx * 0.005;
+      spherical.phi   -= dy * 0.005;
+      spherical.phi = Math.max(0.01, Math.min(Math.PI - 0.01, spherical.phi));
+      const newPos = new THREE.Vector3().setFromSpherical(spherical).add(target);
+      camera.position.copy(newPos); camera.lookAt(target);
+    });
+    window.addEventListener('mouseup', () => {
+      isDragging = false; container.style.cursor = 'grab';
+    });
+    container.addEventListener('wheel', e => {
+      e.preventDefault();
+      const offset = camera.position.clone().sub(target);
+      spherical.setFromVector3(offset);
+      spherical.radius = THREE.MathUtils.clamp(
+        spherical.radius + e.deltaY * 0.01,
+        2, 20
+      );
+      const newPos = new THREE.Vector3().setFromSpherical(spherical).add(target);
+      camera.position.copy(newPos); camera.lookAt(target);
+    });
+
+    // === Braço Robótico ===
+    const mat = new THREE.MeshStandardMaterial({
+      color:0xffffff, metalness:1, roughness:2.4
+    });
+    const arm = {};
+    function makeLink(w,h,d){
+      const pivot = new THREE.Object3D();
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), mat);
+      mesh.position.y = h/2; pivot.add(mesh);
+      return pivot;
+    }
+    arm.basePivot = new THREE.Object3D();
+    const baseMesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.75,0.75,0.3,32), mat
+    );
+    baseMesh.position.y = 0.15;
+    arm.basePivot.add(baseMesh);
+    scene.add(arm.basePivot);
+
+    arm.shoulderPivot = makeLink(0.4,1.2,0.4);
+    arm.shoulderPivot.position.y = 0.35;
+    arm.shoulderPivot.rotation.z = -Math.PI/2;
+    arm.basePivot.add(arm.shoulderPivot);
+
+    arm.elbowPivot = makeLink(0.4,1.0,0.4);
+    arm.elbowPivot.position.y = 1.2;
+    arm.shoulderPivot.add(arm.elbowPivot);
+
+    arm.wristPivot = makeLink(0.3,0.8,0.3);
+    arm.wristPivot.position.y = 1.0;
+    arm.wristPivot.rotation.z = Math.PI/2;
+    arm.elbowPivot.add(arm.wristPivot);
+
+    arm.gripPivot = new THREE.Object3D();
+    arm.gripPivot.position.y = 1.0;
+    arm.wristPivot.add(arm.gripPivot);
+    const fgeom = new THREE.BoxGeometry(0.1,0.6,0.1);
+    const f1 = new THREE.Mesh(fgeom, new THREE.MeshStandardMaterial({color:0x333333}));
+    const f2 = f1.clone();
+    f1.position.set(0.2,-0.1,0);
+    f2.position.set(-0.2,-0.1,0);
+    arm.gripPivot.add(f1,f2);
+    
+
+    
+    
+
+    function animate(){
+      requestAnimationFrame(animate);
+      renderer.render(scene,camera);
+    }
+    animate();
+
+    // === WebSocket & Gravação ===
+    const logEl   = document.getElementById('log');
+    const addLog  = txt => logEl.textContent = txt + '\n' + logEl.textContent;
+    const socket  = new WebSocket('wss://websocket.mirako.org');
+
+    socket.addEventListener('open',  ()    => addLog('✅ Conectado'));
+    socket.addEventListener('error', e     => addLog('❌ '+(e.message||e.type)));
+    socket.addEventListener('close', ev    => {
+      addLog(`⚠️ Fechado (code=${ev.code}), recarregando em 5s…`);
+      setTimeout(()=>location.reload(),5000);
+    });
+
+    const sliders = {
+      base:     document.getElementById('sliderBase'),
+      shoulder: document.getElementById('sliderShoulder'),
+      elbow:    document.getElementById('sliderElbow'),
+      wrist:    document.getElementById('sliderWrist'),
+      gripper:  document.getElementById('sliderGripper'),
+    };
+    const labels = {
+      base:     document.getElementById('valBase'),
+      shoulder: document.getElementById('valShoulder'),
+      elbow:    document.getElementById('valElbow'),
+      wrist:    document.getElementById('valWrist'),
+      gripper:  document.getElementById('valGripper'),
+    };
+
+
+
+
+
+
+
+// --- referências a botões/área de registros ---
+const recordBtn = document.getElementById('recordBtn');
+const sendBtn   = document.getElementById('sendBtn');
+const recArea   = document.getElementById('records');
+let moves       = [];
+
+// --- estado de gravação e envio ---
+let recording = false;
+let sending   = false;
+let sendIdx   = 0;
+let sendIntv  = null;
+
+// --- gravação (sem mudança) ---
+recordBtn.addEventListener('click', () => {
+  recording = !recording;
+  if (recording) {
+    moves = [];
+    recArea.textContent = '';
+    recordBtn.textContent = 'Parar Gravação';
+    sendBtn.disabled = true;
+  } else {
+    recordBtn.textContent = 'Gravar Movimentos';
+    sendBtn.disabled = moves.length === 0;
+  }
+});
+
+// --- toggle de envio/parada ---
+sendBtn.addEventListener('click', () => {
+  if (!sending) {
+    // Inicia envio
+    sending = true;
+    sendBtn.textContent = 'Parar Envio';
+    sendIdx = 0;
+    // a cada 150ms envia um comando
+    sendIntv = setInterval(() => {
+      socket.send(JSON.stringify(moves[sendIdx]));
+      addLog('➤ ' + JSON.stringify(moves[sendIdx]));
+      sendIdx++;
+      if (sendIdx >= moves.length) {
+        // terminou
+        clearInterval(sendIntv);
+        sending = false;
+        sendBtn.textContent = 'Enviar Movimentos';
+        sendBtn.disabled = moves.length === 0;
+      }
+    }, 150);
+  } else {
+    // Interrompe envio
+    clearInterval(sendIntv);
+    sending = false;
+    sendBtn.textContent = 'Enviar Movimentos';
+    sendBtn.disabled = moves.length === 0;
+    addLog('⏹ Envio interrompido');
+  }
+});
+
+// --- ao mexer sliders (sem mudança) ---
+Object.entries(sliders).forEach(([joint, s]) => {
+  s.addEventListener('input', () => {
+    // atualiza labels, envia imediato e registra se gravando...
+    const payload = {
+      base:     Number(sliders.base.value),
+      shoulder: Number(sliders.shoulder.value),
+      elbow:    Number(sliders.elbow.value),
+      wrist:    Number(sliders.wrist.value),
+      gripper:  Number(sliders.gripper.value)
+    };
+    socket.send(JSON.stringify(payload));
+    addLog('➤ ' + JSON.stringify(payload));
+    if (recording) {
+      moves.push(payload);
+      const line = document.createElement('div');
+      line.textContent = JSON.stringify(payload);
+      recArea.appendChild(line);
+      recArea.scrollTop = recArea.scrollHeight;
+    }
+  });
+});
+
+    function addRecord(cmd){
+      moves.push(cmd);
+      const line = document.createElement('div');
+      line.textContent = JSON.stringify(cmd);
+      recArea.appendChild(line);
+      recArea.scrollTop = recArea.scrollHeight;
+    }
+
+    Object.entries(sliders).forEach(([joint,s])=>{
+      s.addEventListener('input', ()=>{
+        const angle = Number(s.value);
+        labels[joint].textContent = angle+'°';
+
+        const payload = {
+          base:     Number(sliders.base.value),
+          shoulder: Number(sliders.shoulder.value),
+          elbow:    Number(sliders.elbow.value),
+          wrist:    Number(sliders.wrist.value),
+          gripper:  Number(sliders.gripper.value)
+        };
+
+        socket.send(JSON.stringify(payload));
+        addLog('➤ '+JSON.stringify(payload));
+        if(recording) addRecord(payload);
+      });
+    });
+
+    socket.addEventListener('message', async ev=>{
+      const txt = ev.data instanceof Blob
+                ? await ev.data.text()
+                : String(ev.data);
+      addLog('⏪ '+txt);
+      let data;
+      try{ data=JSON.parse(txt); }catch{return;}
+      ['base','shoulder','elbow','wrist','gripper'].forEach(j=>{
+        const v = data[j];
+        document.getElementById(j).textContent = v;
+        sliders[j].value = v;
+        labels[j].textContent = v+'°';
+      });
+      // animação do braço virtual (igual antes)…
+      arm.basePivot.rotation.y     = THREE.MathUtils.degToRad(data.base);
+      arm.shoulderPivot.rotation.z = -Math.PI/2 + THREE.MathUtils.degToRad(data.shoulder);
+      arm.elbowPivot.rotation.z    = Math.PI     - THREE.MathUtils.degToRad(data.elbow);
+      arm.wristPivot.rotation.z    = -Math.PI/2 + THREE.MathUtils.degToRad(data.wrist);
+      const g = data.gripper, thr=10, MAX=Math.PI/4;
+      const ang = g<=thr
+                ? 0
+                : THREE.MathUtils.clamp(
+                    THREE.MathUtils.mapLinear(g,thr,180,0,MAX),
+                    0,MAX
+                  );
+      f1.rotation.z =  ang;
+      f2.rotation.z = -ang;
+    });
+  </script>
+</body>
+</html>
